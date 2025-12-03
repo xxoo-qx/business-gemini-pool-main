@@ -1,5 +1,13 @@
 # Nginx 反向代理配置示例
 # 用于 Business Gemini Pool 服务
+# 
+# 使用方法：
+# 1. 复制此文件到 /etc/nginx/sites-available/business-gemini-pool
+# 2. 修改 server_name 为你的域名
+# 3. 如需 HTTPS，取消 SSL 相关注释并配置证书路径
+# 4. 创建软链接：sudo ln -s /etc/nginx/sites-available/business-gemini-pool /etc/nginx/sites-enabled/
+# 5. 测试配置：sudo nginx -t
+# 6. 重载配置：sudo systemctl reload nginx
 
 server {
     listen 80;
@@ -9,6 +17,16 @@ server {
     # listen 443 ssl http2;
     # ssl_certificate /path/to/cert.pem;
     # ssl_certificate_key /path/to/key.pem;
+    # ssl_protocols TLSv1.2 TLSv1.3;
+    # ssl_ciphers HIGH:!aNULL:!MD5;
+    # ssl_prefer_server_ciphers on;
+
+    # 日志配置
+    access_log /var/log/nginx/business-gemini-pool-access.log;
+    error_log /var/log/nginx/business-gemini-pool-error.log;
+
+    # 客户端最大请求体大小（用于文件上传）
+    client_max_body_size 100M;
 
     # 增加超时时间（重要：自动刷新 Cookie 需要较长时间）
     proxy_connect_timeout 600s;
@@ -29,6 +47,44 @@ server {
     # 保持连接超时
     keepalive_timeout 120;
 
+    # Gzip 压缩配置（提高传输效率）
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;
+    gzip_min_length 1000;
+    gzip_disable "msie6";
+
+    # 静态文件直接服务（提高性能，绕过 Flask）
+    location /static/ {
+        alias /path/to/business-gemini-pool/static/;  # 替换为实际的静态文件路径
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+        
+        # 如果静态文件不存在，回退到后端
+        try_files $uri @backend;
+    }
+
+    # WebSocket 支持（Socket.IO）
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket 特殊超时设置
+        proxy_connect_timeout 7d;
+        proxy_send_timeout 7d;
+        proxy_read_timeout 7d;
+    }
+
+    # API 和动态内容代理到后端
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
@@ -36,10 +92,35 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # WebSocket 支持（如果需要）
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        # 安全头（可选，根据需要调整）
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        
+        # 如果静态文件路径配置失败，回退到这里
+        try_files $uri @backend;
+    }
+
+    # 后端回退（如果静态文件不存在）
+    location @backend {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 健康检查端点（可选）
+    location /health {
+        proxy_pass http://127.0.0.1:8000/health;
+        access_log off;
+    }
+
+    # 禁止访问隐藏文件
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
     }
 }
 
