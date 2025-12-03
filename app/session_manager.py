@@ -162,11 +162,12 @@ def ensure_session_for_account(account_idx: int, account: dict, force_new: bool 
         if conversation_id and not force_new:
             if conversation_id in account_manager.conversation_sessions[account_idx]:
                 session = account_manager.conversation_sessions[account_idx][conversation_id]
-                # 调试日志已关闭
-                # print(f"[DEBUG][ensure_session_for_account] 使用对话 {conversation_id} 的 session: {session}")
+                print(f"[检测] ✓ 复用对话 {conversation_id} 的现有 session: {session}")
                 # 调试日志已关闭
                 # print(f"[DEBUG][ensure_session_for_account] 完成 - 总耗时: {time.time() - start_time:.2f}秒")
                 return session, jwt, account.get("team_id")
+            else:
+                print(f"[检测] ⚠️ 对话 {conversation_id} 没有已存在的 session，将创建新 session（force_new={force_new}）")
         
         state = account_manager.account_states[account_idx]
         # 调试日志已关闭
@@ -175,15 +176,12 @@ def ensure_session_for_account(account_idx: int, account: dict, force_new: bool 
         # 如果需要强制创建新 session，或者当前没有 session，则创建新 session
         if force_new or state["session"] is None:
             if force_new and state["session"] is not None:
-                # 调试日志已关闭
-                # print(f"[DEBUG][ensure_session_for_account] 强制创建新session，旧session: {state['session']}")
-                pass
+                print(f"[检测] ⚠️ 强制创建新 session，旧 session: {state['session']}")
             # 如果强制创建新 session，清除旧的 session 映射（如果有 conversation_id）
             if force_new and conversation_id:
                 if conversation_id in account_manager.conversation_sessions[account_idx]:
                     old_session = account_manager.conversation_sessions[account_idx][conversation_id]
-                    # 调试日志已关闭
-                    # print(f"[DEBUG][ensure_session_for_account] 清除对话 {conversation_id} 的旧 session: {old_session}")
+                    print(f"[检测] ⚠️ 清除对话 {conversation_id} 的旧 session: {old_session}（原因: force_new=True）")
                     del account_manager.conversation_sessions[account_idx][conversation_id]
             # 调试日志已关闭
             # print(f"[DEBUG][ensure_session_for_account] 需要创建新session...")
@@ -192,14 +190,12 @@ def ensure_session_for_account(account_idx: int, account: dict, force_new: bool 
             team_id = account.get("team_id")
             session_start = time.time()
             new_session = create_chat_session(jwt, team_id, proxy, account_idx)
-            # 调试日志已关闭
-            # print(f"[DEBUG][ensure_session_for_account] Session创建完成 - 耗时: {time.time() - session_start:.2f}秒, session: {new_session}")
+            print(f"[检测] ✓ 创建新 session: {new_session}（原因: force_new={force_new}, 旧session存在={state['session'] is not None}）")
             
             # 如果有对话 ID，保存到对话 session 映射中
             if conversation_id:
                 account_manager.conversation_sessions[account_idx][conversation_id] = new_session
-                # 调试日志已关闭
-                # print(f"[DEBUG][ensure_session_for_account] 已保存对话 {conversation_id} 的 session: {new_session}")
+                print(f"[检测] ✓ 已保存对话 {conversation_id} 的 session: {new_session}")
             
             # 更新默认 session（用于非新对话的情况）
             state["session"] = new_session

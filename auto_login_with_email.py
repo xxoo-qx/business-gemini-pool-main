@@ -11,6 +11,28 @@ import random
 from pathlib import Path
 from typing import Optional, Dict
 from urllib.parse import urlparse
+import os
+
+def random_delay(min_ms: int = 500, max_ms: int = 2000) -> None:
+    """随机延迟，模拟真实用户行为
+    
+    Args:
+        min_ms: 最小延迟（毫秒）
+        max_ms: 最大延迟（毫秒）
+    """
+    delay = random.uniform(min_ms, max_ms) / 1000.0
+    time.sleep(delay)
+
+def human_like_delay(page, min_ms: int = 500, max_ms: int = 2000) -> None:
+    """在 Playwright 页面中随机延迟，模拟真实用户行为
+    
+    Args:
+        page: Playwright 页面对象
+        min_ms: 最小延迟（毫秒）
+        max_ms: 最大延迟（毫秒）
+    """
+    delay = random.randint(min_ms, max_ms)
+    page.wait_for_timeout(delay)
 
 # 注意：这个脚本需要使用 chrome-mcp 工具
 # 由于无法直接调用 chrome-mcp，这里提供使用 Playwright 的实现
@@ -171,7 +193,7 @@ def get_email_from_tempmail(page, tempmail_url: str) -> Optional[str]:
     # 调试日志已关闭
     # print("[临时邮箱] 正在访问临时邮箱网站...")
     page.goto(tempmail_url, wait_until="networkidle", timeout=60000)
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(1000)  # 短暂等待页面加载
     
     # 判断 URL 是否包含 jwt（如果包含，说明已经指定了邮箱，不需要创建新邮箱）
     is_jwt_url = 'jwt=' in tempmail_url
@@ -199,7 +221,7 @@ def get_email_from_tempmail(page, tempmail_url: str) -> Optional[str]:
                         tab.click()
                         # 调试日志已关闭
                         # print("[临时邮箱] ✓ 已切换到'创建新邮箱'标签页")
-                        page.wait_for_timeout(2000)
+                        page.wait_for_timeout(500)  # 短暂等待切换完成
                     else:
                         # 调试日志已关闭
                         # print("[临时邮箱] ✓ 已在'创建新邮箱'标签页")
@@ -228,7 +250,7 @@ def get_email_from_tempmail(page, tempmail_url: str) -> Optional[str]:
                     button.click()
                     # 调试日志已关闭
                     # print("[临时邮箱] ✓ 已点击'创建新邮箱'按钮")
-                    page.wait_for_timeout(5000)  # 等待邮箱生成
+                    page.wait_for_timeout(3000)  # 等待邮箱生成
                     break
             except:
                 continue
@@ -244,7 +266,7 @@ def get_email_from_tempmail(page, tempmail_url: str) -> Optional[str]:
             close_btn.click()
             # 调试日志已关闭
             # print("[临时邮箱] ✓ 已关闭凭证对话框")
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(500)  # 短暂等待关闭完成
     except:
         pass
     
@@ -436,7 +458,7 @@ def get_verification_code_from_tempmail_browser(page, timeout=120, tempmail_url:
                 # 调试日志已关闭
                 # print("[临时邮箱] 当前页面不在临时邮箱 URL，重新导航...")
                 page.goto(tempmail_url, wait_until="networkidle", timeout=60000)
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(1000)  # 短暂等待页面加载
         except:
             pass
     
@@ -462,7 +484,7 @@ def get_verification_code_from_tempmail_browser(page, timeout=120, tempmail_url:
                     mailbox_tab.click()
                     # 调试日志已关闭
                     # print("[临时邮箱] ✓ 已切换到收件箱")
-                    page.wait_for_timeout(2000)
+                    page.wait_for_timeout(500)  # 短暂等待切换完成
                 else:
                     # 调试日志已关闭
                     # print("[临时邮箱] ✓ 已在收件箱")
@@ -497,7 +519,8 @@ def get_verification_code_from_tempmail_browser(page, timeout=120, tempmail_url:
         if attempts == 1 and not retry_mode:
             # 调试日志已关闭
             # print("[临时邮箱] 第一次获取验证码，等待 10 秒后再刷新（确保新验证码邮件已发送）...")
-            page.wait_for_timeout(10000)  # 等待 10 秒，确保验证码邮件已发送
+            # 使用随机延迟（模拟真实用户等待邮件的时间）
+            human_like_delay(page, 8000, 12000)  # 等待 8-12 秒，确保验证码邮件已发送
         
         # 点击刷新按钮（每次循环都刷新）
         refresh_selectors = [
@@ -535,9 +558,8 @@ def get_verification_code_from_tempmail_browser(page, timeout=120, tempmail_url:
             # 调试日志已关闭
             # print("[临时邮箱] 等待邮件列表加载...")
             pass
-        page.wait_for_timeout(5000)  # 先等待5秒让刷新生效
-        # 再等待一下，确保新邮件真正出现在列表中
-        page.wait_for_timeout(5000)
+        page.wait_for_timeout(3000)  # 等待刷新生效
+        page.wait_for_timeout(2000)  # 再等待一下，确保新邮件真正出现在列表中
         
         # 查找邮件列表（参考 jmzc 的选择器）
         email_list_selectors = [
@@ -652,7 +674,7 @@ def get_verification_code_from_tempmail_browser(page, timeout=120, tempmail_url:
                             if not TEMPMAIL_URLS:
                                 raise ValueError("未配置临时邮箱 URL，请在账号配置中添加 tempmail_url")
                             page.goto(TEMPMAIL_URLS[0], wait_until="networkidle", timeout=30000)
-                        page.wait_for_timeout(3000)
+                        page.wait_for_timeout(1000)  # 短暂等待页面加载
                         # 切换到收件箱标签
                         try:
                             mailbox_tab = page.locator("div[data-name='mailbox'], //div[contains(@class, 'n-tabs-tab')][contains(., '收件箱')]").first
@@ -719,7 +741,7 @@ def get_verification_code_from_tempmail_browser(page, timeout=120, tempmail_url:
                                             if not TEMPMAIL_URLS:
                                                 raise ValueError("未配置临时邮箱 URL，请在账号配置中添加 tempmail_url")
                                             page.goto(TEMPMAIL_URLS[0], wait_until="networkidle", timeout=30000)
-                                        page.wait_for_timeout(2000)
+                                        page.wait_for_timeout(1000)  # 短暂等待页面加载
                                         try:
                                             mailbox_tab = page.locator("div[data-name='mailbox']").first
                                             if mailbox_tab.is_visible():
@@ -872,7 +894,8 @@ def wait_for_recaptcha_ready(page, timeout: int = 10) -> bool:
                 print("[登录] ✓ 检测到 reCAPTCHA 容器，reCAPTCHA 已准备好")
                 return True
             
-            page.wait_for_timeout(check_interval * 1000)
+            # 使用随机延迟（模拟真实用户检查邮件的间隔）
+            human_like_delay(page, check_interval * 1000 - 500, check_interval * 1000 + 1000)
             waited += check_interval
         
         return False
@@ -942,7 +965,8 @@ def wait_for_recaptcha_complete(page, timeout: int = 30) -> bool:
             except:
                 pass
             
-            page.wait_for_timeout(check_interval * 1000)
+            # 使用随机延迟（模拟真实用户检查邮件的间隔）
+            human_like_delay(page, check_interval * 1000 - 500, check_interval * 1000 + 1000)
             waited += check_interval
             
             # 每5秒输出一次等待状态
@@ -1017,10 +1041,13 @@ def login_with_email_and_code(page, email: str, code: str) -> bool:
             return False
 
         try:
+            # 输入前随机延迟
+            human_like_delay(page, 500, 1500)
             email_input.fill(email)
             # 调试日志已关闭
             # print(f"[登录] ✓ 已重新填写邮箱: {email}")
-            page.wait_for_timeout(2000)
+            # 输入后随机延迟
+            human_like_delay(page, 1000, 2500)
         except Exception as e:
             print(f"[登录] ✗ 重新填写邮箱失败: {e}")
             return False
@@ -1029,15 +1056,20 @@ def login_with_email_and_code(page, email: str, code: str) -> bool:
         try:
             continue_btn = page.locator("button:has-text('Continue'), button:has-text('继续')").first
             if continue_btn.is_visible():
+                # 点击前随机延迟
+                human_like_delay(page, 800, 2000)
                 continue_btn.click()
                 # 调试日志已关闭
                 # print("[登录] ✓ 已重新点击继续按钮")
-                page.wait_for_timeout(3000)
+                # 点击后随机延迟
+                human_like_delay(page, 2000, 4000)
         except:
             # 调试日志已关闭
             # print("[登录] ⚠ 未找到继续按钮，尝试按 Enter...")
+            # 按 Enter 前随机延迟
+            human_like_delay(page, 500, 1500)
             email_input.press("Enter")
-            page.wait_for_timeout(3000)
+            human_like_delay(page, 2000, 4000)
 
         # 再次尝试查找验证码输入框
         # 调试日志已关闭
@@ -1086,24 +1118,33 @@ def login_with_email_and_code(page, email: str, code: str) -> bool:
         print("[登录] ✗ 未找到验证码输入框")
         return False
     
+    # 输入验证码前随机延迟（模拟用户查看邮件）
+    human_like_delay(page, 1000, 3000)
+    # 模拟人类输入验证码的速度（逐字符输入，带延迟）
     code_input.fill(code)
     # 调试日志已关闭
     # print(f"[登录] ✓ 已填写验证码: {code}")
-    page.wait_for_timeout(2000)
+    # 输入后随机延迟（模拟用户检查验证码）
+    human_like_delay(page, 1500, 3000)
     
     # 点击验证按钮
     try:
         verify_btn = page.locator("button:has-text('Verify'), button:has-text('验证'), button:has-text('Continue')").first
         if verify_btn.is_visible():
+            # 点击前随机延迟（模拟用户犹豫）
+            human_like_delay(page, 800, 2000)
             verify_btn.click()
             # 调试日志已关闭
             # print("[登录] ✓ 已点击验证按钮")
-            page.wait_for_timeout(3000)  # 等待页面响应
+            # 点击后随机延迟（等待页面响应）
+            human_like_delay(page, 2000, 4000)
     except:
         # 调试日志已关闭
         # print("[登录] ⚠ 未找到验证按钮，尝试按 Enter...")
+        # 按 Enter 前随机延迟
+        human_like_delay(page, 500, 1500)
         code_input.press("Enter")
-        page.wait_for_timeout(3000)
+        human_like_delay(page, 2000, 4000)
     
     # 检查是否有"验证码有误"或"验证码输入次数已超出上限"的错误提示
     # 注意：这个检查只在验证码页面执行，因为错误提示只会在验证码页面显示
@@ -1673,7 +1714,7 @@ def main():
     print("自动获取邮箱和验证码登录 Gemini Business")
     print("="*60)
     if use_headless:
-        print("[模式] 无头模式（headless=\"new\"，更难被检测）")
+        print("[模式] 无头模式（headless=True）")
     else:
         print("[模式] 可视化模式（headless=False）")
     print()
@@ -1684,7 +1725,7 @@ def main():
         if os.name != 'nt':  # 非 Windows 系统
             launch_args = ['--no-sandbox', '--disable-setuid-sandbox']
         
-        # 添加反检测参数，降低被 reCAPTCHA 识别的风险（增强版）
+        # 添加反检测参数，降低被 reCAPTCHA 识别的风险
         launch_args.extend([
             '--disable-blink-features=AutomationControlled',  # 禁用自动化控制特征
             '--disable-dev-shm-usage',  # 避免共享内存问题
@@ -1693,60 +1734,26 @@ def main():
             '--disable-infobars',  # 禁用信息栏
             '--disable-web-security',  # 禁用 Web 安全（谨慎使用）
             '--disable-features=IsolateOrigins,site-per-process',  # 禁用某些安全特性
-            '--window-size=1920,1080',  # 设置窗口大小
-            '--start-maximized',  # 最大化窗口
-            '--disable-extensions',  # 禁用扩展
-            '--disable-gpu',  # 禁用 GPU（无头模式下）
-            '--disable-software-rasterizer',  # 禁用软件光栅化
-            # 增强反检测参数
-            '--disable-background-timer-throttling',  # 禁用后台定时器节流
-            '--disable-backgrounding-occluded-windows',  # 禁用被遮挡窗口的后台处理
-            '--disable-renderer-backgrounding',  # 禁用渲染器后台处理
-            '--disable-features=TranslateUI',  # 禁用翻译UI
-            '--disable-ipc-flooding-protection',  # 禁用IPC洪水保护
-            '--enable-features=NetworkService,NetworkServiceInProcess',  # 启用网络服务
-            '--force-color-profile=srgb',  # 强制颜色配置文件
-            '--metrics-recording-only',  # 仅记录指标
-            '--use-mock-keychain',  # 使用模拟密钥链（Mac）
-            '--disable-component-extensions-with-background-pages',  # 禁用后台页面扩展
         ])
         
-        # 使用新的无头模式（通过启动参数 --headless=new）更难被检测
-        # Python Playwright 的 headless 参数只支持布尔值，但可以通过启动参数启用新无头模式
+        # 使用原来的无头模式
         if use_headless:
-            # 添加 --headless=new 参数以启用新的无头模式（更难被检测）
-            launch_args.append('--headless=new')
             browser = p.chromium.launch(headless=True, args=launch_args)
         else:
             # 有头模式
             browser = p.chromium.launch(headless=False, args=launch_args)
         
-        # 创建浏览器上下文，使用真实的用户代理和视口（增强版）
-        # 使用最新的 Chrome User-Agent
+        # 创建浏览器上下文，使用真实的用户代理和视口
         context = browser.new_context(
             viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             locale="zh-CN",
             timezone_id="Asia/Shanghai",
-            # 添加额外的反检测措施（增强版）
+            # 添加额外的反检测措施
             extra_http_headers={
-                "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br, zstd",
-                "Sec-CH-UA": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-                "Sec-CH-UA-Mobile": "?0",
-                "Sec-CH-UA-Platform": '"Windows"',
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Upgrade-Insecure-Requests": "1",
-                "Cache-Control": "max-age=0",
-            },
-            # 添加更多真实浏览器特征
-            color_scheme="light",
-            reduced_motion="no-preference",
-            forced_colors="none",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            }
         )
         
         # 注入脚本以隐藏自动化特征（超级增强版，更强力绕过 reCAPTCHA）
@@ -1968,12 +1975,63 @@ def main():
                 }
                 
                 // 13. 添加鼠标和键盘事件监听器（模拟真实用户）
-                let mouseEvents = 0;
-                let keyboardEvents = 0;
+                window._mouseEvents = 0;
+                window._keyboardEvents = 0;
                 
-                document.addEventListener('mousemove', () => { mouseEvents++; }, true);
-                document.addEventListener('click', () => { mouseEvents++; }, true);
-                document.addEventListener('keydown', () => { keyboardEvents++; }, true);
+                document.addEventListener('mousemove', () => { window._mouseEvents++; }, true);
+                document.addEventListener('click', () => { window._mouseEvents++; }, true);
+                document.addEventListener('keydown', () => { window._keyboardEvents++; }, true);
+                document.addEventListener('mousedown', () => { window._mouseEvents++; }, true);
+                document.addEventListener('mouseup', () => { window._mouseEvents++; }, true);
+                document.addEventListener('keyup', () => { window._keyboardEvents++; }, true);
+                document.addEventListener('keypress', () => { window._keyboardEvents++; }, true);
+                
+                // 模拟一些初始鼠标移动和键盘事件（让事件计数器不为0）
+                setTimeout(() => {
+                    // 触发多个鼠标移动事件（模拟真实用户移动鼠标）
+                    for (let i = 0; i < 5; i++) {
+                        setTimeout(() => {
+                            const event = new MouseEvent('mousemove', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window,
+                                clientX: Math.random() * window.innerWidth,
+                                clientY: Math.random() * window.innerHeight
+                            });
+                            document.dispatchEvent(event);
+                            window._mouseEvents++;
+                        }, i * 50);
+                    }
+                    
+                    // 触发一些键盘事件（模拟真实用户可能按下的键）
+                    setTimeout(() => {
+                        const keyEvent = new KeyboardEvent('keydown', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            key: 'Tab',
+                            code: 'Tab',
+                            keyCode: 9
+                        });
+                        document.dispatchEvent(keyEvent);
+                        window._keyboardEvents++;
+                    }, 300);
+                }, 200);
+                
+                // 定期触发鼠标移动事件（模拟真实用户偶尔移动鼠标）
+                setInterval(() => {
+                    if (Math.random() < 0.3) { // 30% 概率触发
+                        const event = new MouseEvent('mousemove', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            clientX: Math.random() * window.innerWidth,
+                            clientY: Math.random() * window.innerHeight
+                        });
+                        document.dispatchEvent(event);
+                        window._mouseEvents++;
+                    }
+                }, 2000); // 每2秒检查一次
                 
                 // 14. 覆盖 toString 方法（防止检测）
                 const originalToString = Function.prototype.toString;
@@ -2120,7 +2178,8 @@ def main():
             print("步骤2: 在登录页面输入邮箱")
             print("="*60)
             login_page.goto(GEMINI_LOGIN_URL, wait_until="networkidle", timeout=60000)
-            login_page.wait_for_timeout(3000)
+            # 页面加载后随机延迟（模拟用户阅读页面）
+            human_like_delay(login_page, 2000, 4000)
             
             # 填写邮箱（使用实际页面的 id / aria-label / name）
             try:
@@ -2128,9 +2187,13 @@ def main():
                     "#email-input, input[aria-label='邮箱'], input[type='text'][name='loginHint']"
                 ).first
                 if email_input.is_visible():
+                    # 输入前随机延迟（模拟用户思考）
+                    human_like_delay(login_page, 500, 1500)
+                    # 模拟人类输入速度（逐字符输入）
                     email_input.fill(email)
                     print(f"[登录] ✓ 已填写邮箱: {email}")
-                    login_page.wait_for_timeout(2000)
+                    # 输入后随机延迟（模拟用户检查输入）
+                    human_like_delay(login_page, 1000, 2500)
                     
                     # 点击继续
                     try:
@@ -2142,13 +2205,16 @@ def main():
                             if wait_for_recaptcha_ready(login_page, timeout=5):
                                 print("[登录] reCAPTCHA 已准备好，准备点击按钮...")
                             
+                            # 点击前随机延迟（模拟用户犹豫）
+                            human_like_delay(login_page, 800, 2000)
                             continue_btn.click()
                             print("[登录] ✓ 已点击继续按钮")
                             
                             # 点击后等待 reCAPTCHA 验证完成
                             wait_for_recaptcha_complete(login_page, timeout=30)
                             
-                            login_page.wait_for_timeout(2000)  # 额外等待2秒让页面响应
+                            # 点击后随机延迟（模拟等待页面响应）
+                            human_like_delay(login_page, 2000, 4000)
                     except:
                         email_input.press("Enter")
                         login_page.wait_for_timeout(5000)
@@ -2506,7 +2572,7 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
             if os.name != 'nt':  # 非 Windows 系统
                 launch_args = ['--no-sandbox', '--disable-setuid-sandbox']
             
-            # 添加反检测参数，降低被 reCAPTCHA 识别的风险（增强版）
+            # 添加反检测参数，降低被 reCAPTCHA 识别的风险
             launch_args.extend([
                 '--disable-blink-features=AutomationControlled',  # 禁用自动化控制特征
                 '--disable-dev-shm-usage',  # 避免共享内存问题
@@ -2515,62 +2581,28 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                 '--disable-infobars',  # 禁用信息栏
                 '--disable-web-security',  # 禁用 Web 安全（谨慎使用）
                 '--disable-features=IsolateOrigins,site-per-process',  # 禁用某些安全特性
-                '--window-size=1920,1080',  # 设置窗口大小
-                '--start-maximized',  # 最大化窗口
-                '--disable-extensions',  # 禁用扩展
-                '--disable-gpu',  # 禁用 GPU（无头模式下）
-                '--disable-software-rasterizer',  # 禁用软件光栅化
-                # 增强反检测参数
-                '--disable-background-timer-throttling',  # 禁用后台定时器节流
-                '--disable-backgrounding-occluded-windows',  # 禁用被遮挡窗口的后台处理
-                '--disable-renderer-backgrounding',  # 禁用渲染器后台处理
-                '--disable-features=TranslateUI',  # 禁用翻译UI
-                '--disable-ipc-flooding-protection',  # 禁用IPC洪水保护
-                '--enable-features=NetworkService,NetworkServiceInProcess',  # 启用网络服务
-                '--force-color-profile=srgb',  # 强制颜色配置文件
-                '--metrics-recording-only',  # 仅记录指标
-                '--use-mock-keychain',  # 使用模拟密钥链（Mac）
-                '--disable-component-extensions-with-background-pages',  # 禁用后台页面扩展
             ])
             
-            # 使用新的无头模式（通过启动参数 --headless=new）更难被检测
-            # Python Playwright 的 headless 参数只支持布尔值，但可以通过启动参数启用新无头模式
+            # 使用原来的无头模式
             if headless:
-                # 添加 --headless=new 参数以启用新的无头模式（更难被检测）
-                launch_args.append('--headless=new')
                 browser = p.chromium.launch(headless=True, args=launch_args)
             else:
                 # 有头模式
                 browser = p.chromium.launch(headless=False, args=launch_args)
             print(f"[登录] ✓ 浏览器已启动")
             
-            # 创建浏览器上下文，使用真实的用户代理和视口（增强版）
+            # 创建浏览器上下文，使用真实的用户代理和视口
             print(f"[登录] 正在创建浏览器上下文...")
-            # 使用最新的 Chrome User-Agent
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 locale="zh-CN",
                 timezone_id="Asia/Shanghai",
-                # 添加额外的反检测措施（增强版）
+                # 添加额外的反检测措施
                 extra_http_headers={
-                    "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    "Accept-Encoding": "gzip, deflate, br, zstd",
-                    "Sec-CH-UA": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-                    "Sec-CH-UA-Mobile": "?0",
-                    "Sec-CH-UA-Platform": '"Windows"',
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Sec-Fetch-User": "?1",
-                    "Upgrade-Insecure-Requests": "1",
-                    "Cache-Control": "max-age=0",
-                },
-                # 添加更多真实浏览器特征
-                color_scheme="light",
-                reduced_motion="no-preference",
-                forced_colors="none",
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                }
             )
             
             # 注入脚本以隐藏自动化特征（超级增强版，更强力绕过 reCAPTCHA）
@@ -2911,6 +2943,144 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                             } catch(e) {}
                         }
                     }, 100);
+                    
+                    // 20. 诊断脚本：检测可能导致"出了点问题"错误的检测点
+                    window._detectionDiagnostics = {
+                        check: function() {
+                            try {
+                            const diagnostics = {
+                                timestamp: new Date().toISOString(),
+                                // 1. webdriver 检测
+                                webdriver: {
+                                    navigator_webdriver: navigator.webdriver,
+                                    proto_webdriver: (function() {
+                                        try {
+                                            return navigator.__proto__ && navigator.__proto__.webdriver !== undefined;
+                                        } catch(e) {
+                                            return false;
+                                        }
+                                    })(),
+                                    keys_contains: Object.keys(navigator).includes('webdriver'),
+                                    getOwnPropertyNames_contains: Object.getOwnPropertyNames(navigator).includes('webdriver'),
+                                    getOwnPropertyDescriptor: (function() {
+                                        try {
+                                            return Object.getOwnPropertyDescriptor(navigator, 'webdriver') !== undefined;
+                                        } catch(e) {
+                                            return false;
+                                        }
+                                    })()
+                                },
+                                // 2. Chrome 对象检测
+                                chrome: {
+                                    exists: !!window.chrome,
+                                    runtime: !!window.chrome?.runtime,
+                                    loadTimes: typeof window.chrome?.loadTimes === 'function',
+                                    csi: typeof window.chrome?.csi === 'function'
+                                },
+                                // 3. 浏览器指纹
+                                fingerprint: {
+                                    userAgent: navigator.userAgent,
+                                    platform: navigator.platform,
+                                    languages: navigator.languages,
+                                    plugins: navigator.plugins.length,
+                                    hardwareConcurrency: navigator.hardwareConcurrency,
+                                    deviceMemory: navigator.deviceMemory,
+                                    screen: {
+                                        width: screen.width,
+                                        height: screen.height,
+                                        availWidth: screen.availWidth,
+                                        availHeight: screen.availHeight
+                                    },
+                                    window: {
+                                        innerWidth: window.innerWidth,
+                                        innerHeight: window.innerHeight,
+                                        outerWidth: window.outerWidth,
+                                        outerHeight: window.outerHeight
+                                    }
+                                },
+                                // 4. 自动化特征检测
+                                automation: {
+                                    has_playwright: window.__playwright !== undefined || window.__pw_manual !== undefined,
+                                    has_puppeteer: window.__PUPPETEER_WORLD__ !== undefined || window.puppeteer !== undefined,
+                                    has_selenium: window.__selenium_unwrapped !== undefined || window.__selenium_evaluate !== undefined,
+                                    has_webdriver: window.__webdriver_script_fn !== undefined || window.__driver_evaluate !== undefined,
+                                    has_phantom: window.callPhantom !== undefined || window._phantom !== undefined
+                                },
+                                // 5. 事件监听器检测
+                                events: {
+                                    mouseEvents: window._mouseEvents || 0,
+                                    keyboardEvents: window._keyboardEvents || 0
+                                },
+                                // 6. Canvas 指纹检测
+                                canvas: {
+                                    toDataURL: typeof HTMLCanvasElement.prototype.toDataURL === 'function',
+                                    getImageData: typeof CanvasRenderingContext2D.prototype.getImageData === 'function'
+                                },
+                                // 7. WebGL 指纹检测
+                                webgl: {
+                                    getParameter: typeof WebGLRenderingContext.prototype.getParameter === 'function',
+                                    getExtension: typeof WebGLRenderingContext.prototype.getExtension === 'function'
+                                },
+                                // 8. 权限 API 检测
+                                permissions: {
+                                    query: typeof navigator.permissions?.query === 'function',
+                                    getBattery: typeof navigator.getBattery === 'function'
+                                },
+                                // 9. 网络请求检测
+                                network: {
+                                    fetch: typeof window.fetch === 'function',
+                                    xhr: typeof XMLHttpRequest !== 'undefined',
+                                    fetch_intercepted: window._fetchIntercepted || false,
+                                    xhr_intercepted: window._xhrIntercepted || false
+                                },
+                                // 10. reCAPTCHA 检测
+                                recaptcha: {
+                                    grecaptcha_exists: typeof grecaptcha !== 'undefined',
+                                    enterprise: typeof grecaptcha?.enterprise !== 'undefined',
+                                    ready: typeof grecaptcha?.ready === 'function'
+                                }
+                            };
+                            
+                            // 检测潜在问题
+                            const issues = [];
+                            try {
+                                if (diagnostics.webdriver && diagnostics.webdriver.navigator_webdriver !== undefined) {
+                                    issues.push('navigator.webdriver 仍然存在');
+                                }
+                                if (diagnostics.webdriver && diagnostics.webdriver.proto_webdriver) {
+                                    issues.push('navigator.__proto__.webdriver 仍然存在');
+                                }
+                                if (diagnostics.webdriver && diagnostics.webdriver.keys_contains) {
+                                    issues.push('Object.keys(navigator) 包含 webdriver');
+                                }
+                                if (diagnostics.chrome && !diagnostics.chrome.exists) {
+                                    issues.push('window.chrome 对象不存在');
+                                }
+                                if (diagnostics.automation && (diagnostics.automation.has_playwright || diagnostics.automation.has_puppeteer || 
+                                    diagnostics.automation.has_selenium || diagnostics.automation.has_webdriver)) {
+                                    issues.push('检测到自动化框架特征');
+                                }
+                                if (diagnostics.events && diagnostics.events.mouseEvents === 0 && diagnostics.events.keyboardEvents === 0) {
+                                    issues.push('未检测到鼠标或键盘事件（可能被检测为自动化）');
+                                }
+                            } catch(e) {
+                                issues.push('诊断过程出错: ' + e.message);
+                            }
+                            
+                            diagnostics.issues = issues;
+                            diagnostics.riskLevel = issues.length > 3 ? 'HIGH' : issues.length > 1 ? 'MEDIUM' : 'LOW';
+                            
+                            return diagnostics;
+                            } catch(e) {
+                                return {
+                                    error: true,
+                                    errorMessage: e.message,
+                                    errorStack: e.stack ? e.stack.substring(0, 200) : 'No stack',
+                                    timestamp: new Date().toISOString()
+                                };
+                            }
+                        }
+                    };
                 })();
             """)
             print(f"[登录] ✓ 浏览器上下文已创建")
@@ -2936,17 +3106,21 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                     print(f"[登录] 正在导航到登录页面...")
                     login_page.goto(GEMINI_LOGIN_URL, wait_until="networkidle", timeout=60000)
                     print(f"[登录] ✓ 已导航到登录页面")
-                    login_page.wait_for_timeout(3000)
+                    # 页面加载后随机延迟（模拟用户阅读页面）
+                    human_like_delay(login_page, 2000, 4000)
                     
                     try:
                         email_input = login_page.locator(
                             "#email-input, input[aria-label='邮箱'], input[type='text'][name='loginHint']"
                         ).first
                         if email_input.is_visible():
+                            # 输入前随机延迟（模拟用户思考）
+                            human_like_delay(login_page, 500, 1500)
                             email_input.fill(email)
                             # 调试日志已关闭
                             # print(f"[登录] ✓ 已填写邮箱: {email}")
-                            login_page.wait_for_timeout(2000)
+                            # 输入后随机延迟（模拟用户检查输入）
+                            human_like_delay(login_page, 1000, 2500)
                             
                             # 点击继续，触发发送验证码邮件
                             try:
@@ -2958,6 +3132,8 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                     if wait_for_recaptcha_ready(login_page, timeout=5):
                                         print("[登录] reCAPTCHA 已准备好，准备点击按钮...")
                                     
+                                    # 点击前随机延迟（模拟用户犹豫）
+                                    human_like_delay(login_page, 800, 2000)
                                     # 调试日志已关闭
                                     # print(f"[登录] 点击继续按钮前的 URL: {login_page.url}")
                                     continue_btn.click()
@@ -2967,8 +3143,8 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                     # 点击后等待 reCAPTCHA 验证完成
                                     wait_for_recaptcha_complete(login_page, timeout=30)
                                     
-                                    # 等待一下，让页面有时间响应（验证码邮件发送可能需要时间）
-                                    login_page.wait_for_timeout(3000)  # 等待3秒
+                                    # 点击后随机延迟（等待页面响应，验证码邮件发送可能需要时间）
+                                    human_like_delay(login_page, 2000, 4000)
                                     
                                     # 在等待跳转的过程中，也检查是否在登录页面上出现了成功提示框
                                     try:
@@ -3642,6 +3818,7 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                                                                                 error_detected = True
                                                                                                 error_text_found = aside_text[:200]
                                                                                                 print(f"[登录] ⚠ 检测到错误提示元素（aside）: {error_text_found}")
+                                                                                                
                                                                                                 break
                                                                                     except:
                                                                                         continue
@@ -3661,6 +3838,7 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                                                                                     error_detected = True
                                                                                                     error_text_found = div_text[:200]
                                                                                                     print(f"[登录] ⚠ 检测到错误提示元素（div）: {error_text_found}")
+                                                                                                    
                                                                                                     break
                                                                                         except:
                                                                                             continue
@@ -3709,9 +3887,8 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                                                             
                                                                             # 输出检测结果
                                                                             if error_detected:
-                                                                                print(f"[登录] ⚠ 检测到页面错误提示，可能的原因：页面显示错误提示，导致验证码邮件未发送成功")
                                                                                 if success_detected:
-                                                                                    print(f"[登录] ⚠ 同时也检测到成功提示，页面状态可能不稳定")
+                                                                                    print(f"[登录] ⚠ 同时也检测到成功提示，页面状态可能不稳定，继续等待确认...")
                                                                             elif success_detected:
                                                                                 print(f"[登录] ✓ 检测到成功提示，验证码邮件应该已发送成功")
                                                                             else:
@@ -3726,7 +3903,12 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                                                 continue
                                                         
                                                         if not resend_clicked_ensure:
-                                                            print("[登录] ⚠ 未找到或无法点击重新发送验证码按钮，继续获取验证码...")
+                                                            print("[登录] ⚠ 未找到或无法点击重新发送验证码按钮")
+                                                            print("[登录] ℹ 可能的原因：")
+                                                            print("  1. 按钮尚未出现（需要等待更长时间）")
+                                                            print("  2. 按钮被禁用（需要等待冷却时间）")
+                                                            print("  3. 页面结构发生变化（选择器不匹配）")
+                                                            print("[登录] ℹ 继续尝试获取验证码（可能邮件已发送，只是页面显示错误）...")
                                                     except Exception as e:
                                                         print(f"[登录] ⚠ 点击重新发送验证码按钮时出错: {e}，继续获取验证码...")
                                             else:
@@ -4022,6 +4204,7 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                                                         error_detected = True
                                                                         error_text_found = aside_text[:200]
                                                                         print(f"[登录] ⚠ 检测到错误提示元素（aside）: {error_text_found}")
+                                                                        
                                                                         break
                                                             except:
                                                                 continue
@@ -4041,6 +4224,7 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                                                             error_detected = True
                                                                             error_text_found = div_text[:200]
                                                                             print(f"[登录] ⚠ 检测到错误提示元素（div）: {error_text_found}")
+                                                                            
                                                                             break
                                                                 except:
                                                                     continue
@@ -4089,7 +4273,6 @@ def _refresh_single_account_internal(account_idx: int, account: dict, headless: 
                                                     
                                                     # 输出检测结果
                                                     if error_detected:
-                                                        print(f"[登录] ⚠ 检测到页面错误提示，可能的原因：页面显示错误提示，导致验证码邮件未发送成功")
                                                         if success_detected:
                                                             print(f"[登录] ⚠ 同时也检测到成功提示，页面状态可能不稳定")
                                                     elif success_detected:

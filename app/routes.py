@@ -10,6 +10,7 @@ import mimetypes
 import re
 import secrets
 import traceback
+import base64
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pathlib import Path
@@ -45,7 +46,7 @@ from .auth import (
 from . import auth
 
 # 导入会话管理
-from .session_manager import ensure_session_for_account, upload_file_to_gemini, upload_inline_image_to_gemini
+from .session_manager import ensure_session_for_account, ensure_jwt_for_account, upload_file_to_gemini, upload_inline_image_to_gemini
 
 # 导入聊天处理
 from .chat_handler import (
@@ -387,6 +388,7 @@ def register_routes(app):
                         input_images.extend(images_from_files)
             
             gemini_file_ids = []
+            file_sessions = []  # 记录文件关联的 session，用于后续复用会话
             for fid in input_file_ids:
                 if not fid:
                     continue
@@ -400,16 +402,28 @@ def register_routes(app):
                     gemini_file_ids.append(fid)
                 elif fid.startswith('file-'):
                     # OpenAI 格式，通过 file_manager 转换
-                    gemini_fid = file_manager.get_gemini_file_id(fid)
-                    if gemini_fid:
-                        gemini_file_ids.append(gemini_fid)
+                    file_info = file_manager.get_file(fid)
+                    if file_info:
+                        gemini_fid = file_info.get("gemini_file_id")
+                        file_session = file_info.get("session_name")
+                        if gemini_fid:
+                            gemini_file_ids.append(gemini_fid)
+                        if file_session:
+                            file_sessions.append(file_session)
+                            print(f"[检测] 📎 文件 {fid} 关联的 session: {file_session}")
                     else:
                         print(f"[警告] 文件ID {fid} 在文件管理器中未找到，可能已过期或不存在")
                 else:
                     # 其他格式，尝试通过 file_manager 转换
-                    gemini_fid = file_manager.get_gemini_file_id(fid)
-                    if gemini_fid:
-                        gemini_file_ids.append(gemini_fid)
+                    file_info = file_manager.get_file(fid)
+                    if file_info:
+                        gemini_fid = file_info.get("gemini_file_id")
+                        file_session = file_info.get("session_name")
+                        if gemini_fid:
+                            gemini_file_ids.append(gemini_fid)
+                        if file_session:
+                            file_sessions.append(file_session)
+                            print(f"[检测] 📎 文件 {fid} 关联的 session: {file_session}")
                     else:
                         # 如果转换失败，假设是 Gemini fileId（兼容性处理）
                         print(f"[警告] 文件ID {fid} 格式未知，尝试直接使用（可能是 Gemini fileId）")
@@ -435,9 +449,13 @@ def register_routes(app):
             conversation_id = data.get('conversation_id')
             is_new_conversation = data.get('is_new_conversation', False)
             
+            # 检测是否有图片输入
+            has_images = bool(input_images or input_file_ids or gemini_file_ids)
+            
             # 如果前端没有传递 conversation_id，则根据消息内容自动生成
             # 注意：对于其他客户端（如 Cursor、Cherry Studio），如果没有传递 conversation_id，
             # 我们使用第一条用户消息内容生成稳定的 ID，确保同一对话的后续请求使用相同的 ID
+            content = ""  # 初始化 content 变量，用于后续检查
             if not conversation_id and messages:
                 user_count = sum(1 for msg in messages if msg.get('role') == 'user')
                 assistant_count = sum(1 for msg in messages if msg.get('role') == 'assistant')
@@ -451,29 +469,52 @@ def register_routes(app):
                 is_new_conversation = (user_count == 1 and assistant_count == 0 and total_count == 1)
                 
                 if first_user_msg:
-                    # 始终使用第一条用户消息内容生成稳定的 ID（不包含时间戳）
-                    # 这样同一对话的后续请求会使用相同的 ID，即使客户端没有传递 conversation_id
-                    content = str(first_user_msg.get('content', ''))
-                    # 如果内容是数组（包含文件等），提取文本部分
-                    if isinstance(first_user_msg.get('content'), list):
+                    # 按照 Gemini-Link-System 的逻辑：只使用第一条消息的文本部分生成会话键
+                    # 完全忽略图片，因为图片上传到 session 后会持久化，不需要参与会话键计算
+                    raw_content = first_user_msg.get('content', '')
+                    content = ""
+                    
+                    # 如果内容是数组（包含文件等），只提取文本部分，完全忽略图片
+                    if isinstance(raw_content, list):
                         text_parts = []
-                        for item in first_user_msg.get('content', []):
-                            if isinstance(item, dict):
-                                if item.get('type') == 'text':
-                                    text_parts.append(str(item.get('text', '')))
-                                elif item.get('type') == 'file':
-                                    # 文件类型也参与ID生成，确保唯一性
-                                    file_id = item.get('file', {}).get('id') or item.get('file_id', '')
-                                    text_parts.append(f"file:{file_id}")
-                        content = '|'.join(text_parts) if text_parts else str(first_user_msg.get('content', ''))
-                    conversation_id = hashlib.md5(content.encode('utf-8')).hexdigest()[:16]
+                        for item in raw_content:
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                text_parts.append(str(item.get('text', '')))
+                        # 只使用文本部分，忽略所有图片/文件
+                        content = '|'.join(text_parts) if text_parts else ""
+                    else:
+                        # 如果是字符串，需要移除 base64 图片数据
+                        content_str = str(raw_content)
+                        # 移除 base64 图片数据 URL
+                        base64_pattern = r'data:image/[^;]+;base64,[A-Za-z0-9+/=\s]+'
+                        text_only = re.sub(base64_pattern, '', content_str, flags=re.MULTILINE)
+                        # 清理多余的空白字符
+                        content = re.sub(r'\s+', ' ', text_only).strip()
+                    
+                    # 如果内容为空，使用 "empty"（类似 Gemini-Link-System）
+                    if not content:
+                        content = "empty"
+                    
+                    # 生成 conversation_id（使用 MD5，类似 Gemini-Link-System）
+                    generated_id = hashlib.md5(content.encode('utf-8')).hexdigest()[:16]
+                    conversation_id = generated_id
+                    
+                    # 打印 conversation_id 生成内容（用于调试）
+                    print(f"[检测] 🔍 conversation_id 生成内容: {content[:200]}... (长度: {len(content)}, has_images={has_images})")
+                    print(f"[检测] 🔍 conversation_id MD5 结果: {conversation_id}")
                 
                 if is_new_conversation:
                     print(f"[聊天] 检测到新对话（user={user_count}, assistant={assistant_count}, system={system_count}, total={total_count}），对话ID: {conversation_id}，将创建新的 session")
+                    if has_images:
+                        print(f"[检测] ⚠️ 新对话包含图片输入（input_images={len(input_images)}, input_file_ids={len(input_file_ids)}, gemini_file_ids={len(gemini_file_ids)}）")
                 elif conversation_id:
                     print(f"[聊天] 继续对话，对话ID: {conversation_id}")
+                    if has_images:
+                        print(f"[检测] ℹ️ 继续对话包含图片输入（input_images={len(input_images)}, input_file_ids={len(input_file_ids)}, gemini_file_ids={len(gemini_file_ids)}）")
             elif conversation_id:
                 print(f"[聊天] 使用前端传递的对话ID: {conversation_id}, 新对话: {is_new_conversation}")
+                if has_images:
+                    print(f"[检测] ℹ️ 前端传递的对话包含图片输入（input_images={len(input_images)}, input_file_ids={len(input_file_ids)}, gemini_file_ids={len(gemini_file_ids)}），is_new_conversation={is_new_conversation}")
             
             preferred_account_idx = None
             if selected_model_config and "account_index" in selected_model_config:
@@ -513,14 +554,97 @@ def register_routes(app):
                         # 根据请求类型选择对应配额类型可用的账号
                         account_idx, account = account_manager.get_next_account(required_quota_type)
                     
-                    session, jwt, team_id = ensure_session_for_account(account_idx, account, force_new=is_new_conversation, conversation_id=conversation_id)
+                    # ⚠️ 特殊处理：如果当前请求是新对话且有文本（不是 "empty"），
+                    # 检查是否有 "empty" 会话键的 session（可能是之前只有图片的请求创建的）
+                    # 如果有，复用该 session，确保图片在同一个 session 中可见
+                    should_check_empty_session = (
+                        is_new_conversation and  # 是新对话
+                        account_idx is not None and  # 已选择账号
+                        not data.get('conversation_id') and  # 客户端没有传递 conversation_id
+                        content and  # 有文本内容
+                        content != "empty"  # 不是 "empty"
+                    )
+                    
+                    if should_check_empty_session:
+                        # 计算 "empty" 的 conversation_id
+                        empty_id = hashlib.md5("empty".encode('utf-8')).hexdigest()[:16]
+                        with account_manager.lock:
+                            if account_idx in account_manager.conversation_sessions:
+                                if empty_id in account_manager.conversation_sessions[account_idx]:
+                                    existing_session = account_manager.conversation_sessions[account_idx][empty_id]
+                                    print(f"[检测] 🔍 找到已存在的'只有图片'的 session: {existing_session} (conversation_id={empty_id})")
+                                    print(f"[检测] 🔍 将使用该 session 而不是创建新的 (原 conversation_id={conversation_id})")
+                                    # 使用已存在的 session 的 conversation_id
+                                    conversation_id = empty_id
+                                    is_new_conversation = False  # 不是新对话，是继续对话
+                    
+                    # 按照 Gemini-Link-System 的逻辑：
+                    # 图片上传到 session 后会持久化，不需要特殊处理
+                    # 如果找到缓存的 session，直接复用，图片已经在 session 中了
+                    
+                    # 调试：检测图片输入时的会话创建
+                    if has_images and is_new_conversation:
+                        print(f"[检测] ⚠️ 图片输入 + 新对话：force_new=True, conversation_id={conversation_id}")
+                    elif has_images and not is_new_conversation:
+                        print(f"[检测] ℹ️ 图片输入 + 继续对话：force_new=False, conversation_id={conversation_id}")
+                    
+                    # ⚠️ 重要：如果使用了 file_id，且文件关联了 session，应该使用该 session
+                    # 而不是创建新的 session，否则文件在旧 session 中，聊天在新 session 中，会看不到文件
+                    use_file_session = None
+                    if file_sessions and len(file_sessions) > 0:
+                        # 使用第一个文件的 session（如果所有文件都在同一个 session 中）
+                        use_file_session = file_sessions[0]
+                        # 检查是否所有文件都在同一个 session 中
+                        if len(set(file_sessions)) > 1:
+                            print(f"[警告] ⚠️ 多个文件关联了不同的 session: {set(file_sessions)}，将使用第一个: {use_file_session}")
+                        print(f"[检测] 📎 检测到文件关联的 session: {use_file_session}，将使用该 session 进行聊天")
+                    
+                    if use_file_session:
+                        # 使用文件关联的 session，而不是创建新的
+                        jwt = ensure_jwt_for_account(account_idx, account)
+                        session = use_file_session
+                        team_id = account.get("team_id")
+                        print(f"[检测] ✓ 使用文件关联的 session: {session}（跳过会话创建）")
+                    else:
+                        # 正常创建或复用 session
+                        session, jwt, team_id = ensure_session_for_account(account_idx, account, force_new=is_new_conversation, conversation_id=conversation_id)
                     from .utils import get_proxy
                     proxy = get_proxy()
                     
-                    for img in input_images:
-                        uploaded_file_id = upload_inline_image_to_gemini(jwt, session, team_id, img, proxy, account_idx)
-                        if uploaded_file_id:
-                            gemini_file_ids.append(uploaded_file_id)
+                    # 按照 Gemini-Link-System 的逻辑：如果有图片且还没上传到当前 Session，先上传
+                    # 注意：如果 session 是复用的，图片可能已经在 session 中了，但这次请求有新的图片，需要上传
+                    if input_images:
+                        for img in input_images:
+                            uploaded_file_id = upload_inline_image_to_gemini(jwt, session, team_id, img, proxy, account_idx)
+                            if uploaded_file_id:
+                                gemini_file_ids.append(uploaded_file_id)
+                                # 保存文件到 file_manager，关联 session（用于后续复用）
+                                if file_manager:
+                                    # 从图片数据中获取信息
+                                    mime_type = img.get("mime_type", "image/png")
+                                    if img.get("type") == "base64":
+                                        # 计算 base64 数据的大小
+                                        data = img.get("data", "")
+                                        size = len(base64.b64decode(data)) if data else 0
+                                    elif img.get("type") == "url":
+                                        # URL 类型，无法直接获取大小，使用 0
+                                        size = 0
+                                    else:
+                                        size = 0
+                                    
+                                    # 生成文件名
+                                    ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+                                    ext = ext_map.get(mime_type, ".png")
+                                    filename = f"inline_{uploaded_file_id}{ext}"
+                                    
+                                    file_manager.add_file(
+                                        openai_file_id=f"file-{uploaded_file_id}",  # 使用 OpenAI 格式的 file_id
+                                        gemini_file_id=uploaded_file_id,
+                                        session_name=session,
+                                        filename=filename,
+                                        mime_type=mime_type,
+                                        size=size
+                                    )
                     
                     api_model_id = None
                     if selected_model_config and not try_without_model_id:
