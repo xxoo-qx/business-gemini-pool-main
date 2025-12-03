@@ -37,28 +37,9 @@ def refresh_cookie_with_browser(account: dict, proxy: Optional[str] = None) -> O
         with sync_playwright() as p:
             # 启动浏览器
             try:
-                # 使用新的无头模式（通过启动参数 --headless=new）更难被检测
-                # Python Playwright 的 headless 参数只支持布尔值，但可以通过启动参数启用新无头模式
-                launch_args = ['--no-sandbox', '--disable-setuid-sandbox'] if os.name != 'nt' else []
-                # 添加反检测参数，降低被 reCAPTCHA 识别的风险
-                launch_args.extend([
-                    '--disable-blink-features=AutomationControlled',  # 禁用自动化控制特征
-                    '--disable-dev-shm-usage',  # 避免共享内存问题
-                    '--no-first-run',  # 跳过首次运行
-                    '--no-default-browser-check',  # 跳过默认浏览器检查
-                    '--disable-infobars',  # 禁用信息栏
-                    '--disable-web-security',  # 禁用 Web 安全（谨慎使用）
-                    '--disable-features=IsolateOrigins,site-per-process',  # 禁用某些安全特性
-                    '--window-size=1920,1080',  # 设置窗口大小
-                    '--start-maximized',  # 最大化窗口
-                    '--disable-extensions',  # 禁用扩展
-                    '--disable-gpu',  # 禁用 GPU（无头模式下）
-                    '--disable-software-rasterizer',  # 禁用软件光栅化
-                ])
-                launch_args.append('--headless=new')  # 启用新的无头模式
                 browser = p.chromium.launch(
-                    headless=True,  # Python Playwright 只支持布尔值
-                    args=launch_args
+                    headless=True,
+                    args=['--no-sandbox', '--disable-setuid-sandbox'] if os.name != 'nt' else []
                 )
             except Exception as e:
                 error_msg = str(e)
@@ -752,28 +733,9 @@ def maintain_browser_session(account_idx: int, account: dict, proxy: Optional[st
         
         with sync_playwright() as p:
             # 启动浏览器
-            # 使用新的无头模式（通过启动参数 --headless=new）更难被检测
-            # Python Playwright 的 headless 参数只支持布尔值，但可以通过启动参数启用新无头模式
-            launch_args = ['--no-sandbox', '--disable-setuid-sandbox'] if os.name != 'nt' else []
-            # 添加反检测参数，降低被 reCAPTCHA 识别的风险
-            launch_args.extend([
-                '--disable-blink-features=AutomationControlled',  # 禁用自动化控制特征
-                '--disable-dev-shm-usage',  # 避免共享内存问题
-                '--no-first-run',  # 跳过首次运行
-                '--no-default-browser-check',  # 跳过默认浏览器检查
-                '--disable-infobars',  # 禁用信息栏
-                '--disable-web-security',  # 禁用 Web 安全（谨慎使用）
-                '--disable-features=IsolateOrigins,site-per-process',  # 禁用某些安全特性
-                '--window-size=1920,1080',  # 设置窗口大小
-                '--start-maximized',  # 最大化窗口
-                '--disable-extensions',  # 禁用扩展
-                '--disable-gpu',  # 禁用 GPU（无头模式下）
-                '--disable-software-rasterizer',  # 禁用软件光栅化
-            ])
-            launch_args.append('--headless=new')  # 启用新的无头模式
             browser = p.chromium.launch(
-                headless=True,  # Python Playwright 只支持布尔值
-                args=launch_args
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox'] if os.name != 'nt' else []
             )
             
             # 获取现有 Cookie（使用最新的账号信息）
@@ -1619,4 +1581,3 @@ def auto_refresh_expired_cookies_worker():
             traceback.print_exc()
             # 出错后等待一段时间再继续
             time.sleep(60)
-
